@@ -1,0 +1,221 @@
+---
+title: "Data Cleaning"
+author: "group"
+date: "September 17, 2019"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+
+# Project on Scraping and Cleaning Data
+
+This data is acquired from experiments have been carried out with a group of 30 volunteers within an age bracket of 19-48 years. Each person performed six activities (WALKING, WALKING_UPSTAIRS, WALKING_DOWNSTAIRS, SITTING, STANDING, LAYING) wearing a smartphone (Samsung Galaxy S II) on the waist. Using its embedded accelerometer and gyroscope, we captured 3-axial linear acceleration and 3-axial angular velocity at a constant rate of 50Hz. The experiments have been video-recorded to label the data manually. The obtained dataset has been randomly partitioned into two sets, where 70% of the volunteers was selected for generating the training data and 30% the test data. 
+
+The sensor signals (accelerometer and gyroscope) were pre-processed by applying noise filters and then sampled in fixed-width sliding windows of 2.56 sec and 50% overlap (128 readings/window). The sensor acceleration signal, which has gravitational and body motion components, was separated using a Butterworth low-pass filter into body acceleration and gravity. The gravitational force is assumed to have only low frequency components, therefore a filter with 0.3 Hz cutoff frequency was used. From each window, a vector of features was obtained by calculating variables from the time and frequency domain. See 'features_info.txt' for more details. 
+
+Information on the data may be found:
+
+https://archive.ics.uci.edu/ml/datasets/human+activity+recognition+using+smartphones#
+
+## Preparing workspace
+
+This cleans up the workspace, removing exiting items:
+
+```{r }
+rm(list = ls())
+```
+
+## Getting and loading the required packages
+
+This loads the required packages for the data cleaning process including a condition to install the packages if they are not already installed:
+
+```{r, warning=FALSE}
+
+if ("dplyr" %in% row.names(installed.packages()) == FALSE){install.packages("dplyr")}
+if ("tidyr" %in% row.names(installed.packages()) == FALSE){install.packages("tidyr")}
+
+library("dplyr"); 
+library("tidyr")
+
+```
+
+
+## Extracting data from the web
+
+Here the data is sourced from the website and stored. A check is also done to know if the data already exists.
+```{r}
+
+file_url <- "https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip"
+
+if (!dir.exists("data2")){
+  dir.create("data2")
+}
+
+data_path = "./data2/UCI HAR Dataset"
+
+if (!file.exists(data_path)){
+  download.file(file_url, "./data2/UCI_data.zip")
+  unzip("./data2/UCI_data.zip", exdir = "./data2")
+  
+}
+
+```
+
+
+## Merging the test and train datasets to create one dataset
+
+The dataset includes the following files:
+
+
+- 'README.txt'
+
+- 'features_info.txt': Shows information about the variables used on the feature vector.
+
+- 'features.txt': List of all features.
+
+- 'activity_labels.txt': Links the class labels with their activity name.
+
+- 'train/X_train.txt': Training set.
+
+- 'train/y_train.txt': Training labels.
+
+- 'test/X_test.txt': Test set.
+
+- 'test/y_test.txt': Test labels.
+
+The different files are read in and training and test sets are merged for subsequent cleaning:
+
+```{r}
+
+list.files("./data2/UCI HAR Dataset/")
+
+#reading in train set values
+x_train <- read.table(file = "./data2/UCI HAR Dataset/train/X_train.txt")
+y_train <- read.table(file = "./data2/UCI HAR Dataset/train/y_train.txt", col.names = c("activity"))
+sub_train <- read.table(file = "./data2/UCI HAR Dataset/train/subject_train.txt", col.names = c("subject"))
+
+#combining the columns to make training data
+dt_train <- cbind(sub_train, y_train, x_train)
+
+#reading in the test set values
+x_test <- read.table(file = "./data2/UCI HAR Dataset/test/X_test.txt")
+y_test <- read.table(file= "./data2/UCI HAR Dataset/test/y_test.txt", col.names = c("activity"))
+sub_test <- read.table(file= "./data2/UCI HAR Dataset/test/subject_test.txt", col.names = c("subject"))
+
+#combinig the columns to make the training data
+dt_test <- cbind(sub_test, y_test, x_test)
+
+#merging test and train data sets
+dt_merged <- rbind(dt_train, dt_test)
+
+# displaying a sample data entry
+print(head(dt_merged, 1))
+
+```
+
+
+## Extracting the feature names
+
+The feature names are extracted from the relevant file here and additional feature names (`"subject", "activity"`) are included:
+
+```{r}
+features <- read.table(file = "./data2/UCI HAR Dataset/features.txt", stringsAsFactors = FALSE, col.names = c("id", "name"))
+feature_extended <- c("subject", "activity", features$name)
+
+# displaying some of the features
+print(feature_extended[1:20])
+```
+
+
+
+## Extracting only measurements on mean and standard deviation
+
+A decision is made here to extract only features (columns) which includes `mean,std,subject,activity` in the naming while dropping those which include `freq`. This is an arbitrary choice to simplify the data:
+
+```{r}
+feature_select <- feature_extended[grepl("mean|std|subject|activity",   feature_extended) & !grepl("Freq|freq", feature_extended)]
+feature_select_index <- grepl("mean|std|subject|activity", feature_extended) &   !grepl("Freq|freq", feature_extended)
+
+#filtering the needed variables in merged dataset by the position of the required features
+dt_merged_filtered <- dt_merged[, feature_select_index]
+
+head(dt_merged_filtered, 1)
+
+```
+
+
+## Cleaning up variable names
+
+The activity labels are extracted from the relevant file and merged with the data:
+
+```{r}
+#reading in activity names
+activity_labels <- read.table(file = "./data2/UCI HAR Dataset/activity_labels.txt", stringsAsFactors = FALSE, col.names = c("id", "name"))
+
+#3. fixing corresponding descriptive activity name to the values in the merged dataset as a variabe called activity name
+dt_merged_filtered <- mutate(dt_merged_filtered, activity_name = as.character(factor(dt_merged_filtered$activity, labels = activity_labels$name)))
+```
+
+## Cleaning feature names and using descriptive names
+
+The variable names are cleaned up to provide a more meaningnful representation:
+
+```{r}
+feature_select_clean <- gsub("\\(\\)", "", feature_select)
+feature_select_clean <- gsub("^t(.*)$", "\\1-timedomain", feature_select_clean)
+feature_select_clean <- gsub("^f(.*)$", "\\1-freqdomain", feature_select_clean)
+feature_select_clean <- gsub("(Jerk|Gyro)", "-\\1", feature_select_clean)
+feature_select_clean <- gsub("Mag", "-Magnitude", feature_select_clean)
+feature_select_clean <- gsub("Acc", "-Acceleration", feature_select_clean)
+feature_select_clean <- gsub("BodyBody", "Body", feature_select_clean)
+feature_select_clean <- tolower(feature_select_clean)
+
+#fixing variable names for the filtered dataset
+names(dt_merged_filtered) <- c(feature_select_clean, "activity_name")
+
+# displaying some of the features
+print(feature_select_clean[1:20])
+
+# displaying a sample data entry
+print(head(dt_merged_filtered, 1))
+
+```
+
+
+## Creating a second, independent tidy data set with the average of each variable for each activity and each subject.
+
+Here the observations for each subject and activity combination is grouped together and the mean is computed such that only one value is given for person 1 doing activity walking for example ( as opposed to having several entries for person 1 walking):
+
+```{r}
+#dt_tidy <- dt_merged_filtered %>% group_by(subject, activity) %>% summarise_each(funs(mean)) #%>% gather(key = measure, value = mean, -subject, -activity)
+
+dt_tidy <- dt_merged_filtered %>% group_by(subject, activity, activity_name) %>% summarise_each(funs = list(mean))
+
+# displaying a sample data entry
+print(head(dt_tidy, 1))
+
+```
+
+## Saving the data and clearing up the workspace
+
+The now tidied data is saved in the relevant workspave as a text file:
+```{r}
+#saving independent tidied data to a file
+write.table(dt_tidy, file = "./data2/tidied_data.txt")
+
+
+#Clearing the workspace
+rm(list = ls())
+
+```
+
+
+
+
